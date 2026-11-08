@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nami Sim</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1b1f24; --muted:#5f6b7a; --line:#e2e6eb;
+    --nurse:#dfe9ff; --nami:#ffffff; --accent:#2457d6; --ok:#1d8a4a; --warn:#b4541a; --bad:#c0392b;
+    --chip:#eef1f5; --chip-ink:#2a3340; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#171b21; --ink:#e8ebef; --muted:#97a2b0; --line:#2a313a;
+    --nurse:#203457; --nami:#1e242c; --accent:#7ea2ff; --ok:#4fc27a; --warn:#f0a35c; --bad:#ff7b6e;
+    --chip:#222933; --chip-ink:#d6dce4;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e8ebef; --muted:#97a2b0; --line:#2a313a;
+    --nurse:#203457; --nami:#1e242c; --accent:#7ea2ff; --ok:#4fc27a; --warn:#f0a35c; --bad:#ff7b6e;
+    --chip:#222933; --chip-ink:#d6dce4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
+  header h1{font-size:17px;margin:0;font-weight:650}
+  header .meta{color:var(--muted);font-size:13px;font-family:var(--mono)}
+  header .spacer{flex:1}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:6px}
+  .dot.ok{background:var(--ok)}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;padding:16px;max-width:1500px;margin:0 auto}
+  @media (max-width:980px){ main{grid-template-columns:1fr} }
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .chat{display:flex;flex-direction:column;min-height:calc(100vh - 110px)}
+  .log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:78%;padding:10px 14px;border-radius:14px;border:1px solid var(--line);white-space:pre-wrap;word-break:keep-all}
+  .msg.nurse{align-self:flex-end;background:var(--nurse);border-bottom-right-radius:4px}
+  .msg.nami{align-self:flex-start;background:var(--nami);border-bottom-left-radius:4px}
+  .msg.sys{align-self:center;background:transparent;border:none;color:var(--muted);font-size:13px;max-width:100%;text-align:center}
+  .msg .who{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .badge{display:inline-block;font:12px/1 var(--mono);padding:4px 7px;border-radius:6px;background:var(--chip);color:var(--chip-ink)}
+  .badge.intent{background:var(--accent);color:#fff}
+  .badge.ok{background:var(--ok);color:#fff}
+  .badge.bad{background:var(--bad);color:#fff}
+  .badge.warn{background:var(--warn);color:#fff}
+  .msg .diag{margin-top:6px;font:12px/1.5 var(--mono);color:var(--muted)}
+  .guard{margin-top:6px;padding:6px 8px;border-left:3px solid var(--warn);background:var(--chip);font-size:13px;border-radius:4px}
+  .guard b{color:var(--warn)}
+  .err{margin-top:6px;padding:6px 8px;border-left:3px solid var(--bad);background:var(--chip);font:12px/1.5 var(--mono);border-radius:4px;white-space:pre-wrap}
+  .compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+  .compose input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px}
+  button{padding:9px 14px;border-radius:9px;border:1px solid var(--line);background:var(--chip);color:var(--chip-ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--accent);color:#fff;border-color:transparent}
+  button:disabled{opacity:.5;cursor:default}
+  .side{display:flex;flex-direction:column;gap:16px}
+  .side section{padding:14px 16px}
+  .side h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:6px 10px;border-radius:999px;background:var(--chip);color:var(--chip-ink);border:1px solid var(--line);cursor:pointer;font-size:13px}
+  .chip:hover{border-color:var(--accent)}
+  .chip small{color:var(--muted);font-family:var(--mono);margin-right:4px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .row:last-child{border-bottom:none}
+  .row label{color:var(--ink);font-size:14px}
+  select,input[type=text]{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:13px}
+  .facts{font-size:13.5px;color:var(--ink)}
+  .facts li{margin:3px 0}
+  .facts .k{color:var(--muted)}
+  .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .stat{background:var(--chip);border-radius:8px;padding:8px;text-align:center}
+  .stat b{display:block;font-size:20px}
+  .stat span{font-size:12px;color:var(--muted)}
+  details pre{font:12px/1.45 var(--mono);white-space:pre-wrap;background:var(--chip);padding:10px;border-radius:8px;max-height:320px;overflow:auto}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>나미 · 린넨 수거 보고 에이전트 시뮬레이터</h1>
+  <span class="meta" id="health"><span class="dot"></span>connecting…</span>
+  <span class="spacer"></span>
+  <button id="themeBtn" title="theme">◐</button>
+</header>
+
+<main>
+  <div class="panel chat">
+    <div class="log" id="log"></div>
+    <div class="compose">
+      <input id="input" placeholder="간호사 발화를 입력하세요 (Enter로 전송)" autocomplete="off">
+      <button class="primary" id="send">전송</button>
+    </div>
+  </div>
+
+  <aside class="side">
+    <section class="panel">
+      <h2>실증 명령어 (9종)</h2>
+      <div class="chips" id="demoChips"></div>
+      <div class="actions">
+        <button class="primary" id="runAll">9종 순서대로 자동 실행</button>
+        <button id="runExtra">변형 질문 실행</button>
+      </div>
+      <div class="summary" id="summary" hidden>
+        <div class="stat"><b id="sTotal">0</b><span>응답</span></div>
+        <div class="stat"><b id="sIntent">0</b><span>의도 일치</span></div>
+        <div class="stat"><b id="sGuard">0</b><span>가드 경고</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>변형 · 후속 질문</h2>
+      <div class="chips" id="extraChips"></div>
+      <p class="hint">대본에 없는 표현으로 유연성과 사실 고정을 함께 확인합니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>런타임 상태 (로봇 시스템 제공)</h2>
+      <div class="row"><label>보고 기록</label>
+        <select id="stReport">
+          <option value="none">기록 없음 (미확인)</option>
+          <option value="pending">전달 대기 중</option>
+          <option value="delivered">담당 간호사 · 전달 완료</option>
+          <option value="failed">담당 간호사 · 전달 실패</option>
+        </select></div>
+      <div class="row"><label>환자 이동경로 밖</label>
+        <select id="stPatient"><option value="null">미확인</option><option value="true">확인됨</option><option value="false">아님</option></select></div>
+      <div class="row"><label>재수거 권한</label>
+        <select id="stAuth"><option value="null">미확인</option><option value="true">승인됨</option><option value="false">거부됨</option></select></div>
+      <div class="row"><label>재수거 요청 접수됨</label><input type="checkbox" id="stRetryReq"></div>
+      <div class="row"><label>재수거 실행 확인 (완료)</label><input type="checkbox" id="stExec"></div>
+      <div class="actions">
+        <button id="resetSess">대화 초기화</button>
+        <button id="resetAll">대화+상태 초기화</button>
+        <button id="exportBtn">기록 내보내기</button>
+      </div>
+      <p class="hint">상태를 바꾸면 다음 발화부터 반영됩니다. 의도 분류는 모델 출력이며, 가드 경고는 규칙 기반 사후 점검입니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>시나리오 사실 (고정)</h2>
+      <ul class="facts" id="facts"></ul>
+      <details style="margin-top:8px"><summary class="hint">시스템 프롬프트 보기</summary><pre id="promptView">loading…</pre></details>
+    </section>
+  </aside>
+</main>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+const log = $('#log');
+let sessionId = null, scenario = null, busy = false;
+const stats = {total:0, intent:0, guard:0};
+
+// ---------- theme
+(function(){ try{ const t=localStorage.getItem('nami-theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){} })();
+$('#themeBtn').onclick = ()=>{ const cur=document.documentElement.dataset.theme; const next = cur==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('nami-theme',next)}catch(e){} };
+
+// ---------- api
+async function api(path, opts={}){
+  const r = await fetch(path, {headers:{'Content-Type':'application/json'}, ...opts});
+  if(!r.ok){ throw new Error(`${r.status} ${await r.text()}`); }
+  return r.json();
+}
+
+function sys(text){ const d=document.createElement('div'); d.className='msg sys'; d.textContent=text; log.appendChild(d); log.scrollTop=log.scrollHeight; }
+
+function addNurse(text){
+  const d=document.createElement('div'); d.className='msg nurse';
+  d.innerHTML = `<div class="who">간호사</div>`; d.append(text); log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+
+function addNami(r){
+  const d=document.createElement('div'); d.className='msg nami';
+  const who=document.createElement('div'); who.className='who';
+  who.innerHTML = `<span>나미</span> <span class="badge intent">${r.intent}</span>`;
+  if(r.expected_intent){
+    const b=document.createElement('span'); b.className='badge '+(r.intent_match?'ok':'bad'); b.textContent = r.intent_match?'의도 일치':`예상 ${r.expected_intent}`; who.appendChild(b);
+  }
+  if(r.requested_action && r.requested_action!=='NONE'){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='action: '+r.requested_action; who.appendChild(b); }
+  if(r.end_conversation){ const b=document.createElement('span'); b.className='badge'; b.textContent='end_conversation'; who.appendChild(b); }
+  if(r.fallback_used){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='fallback model'; who.appendChild(b); }
+  d.appendChild(who);
+  d.append(r.speech);
+  const u=r.usage||{};
+  const diag=document.createElement('div'); diag.className='diag';
+  diag.textContent = `${r.latency_ms} ms · ${r.model||''} · in ${u.input_tokens??'-'} (cache ${u.cache_read_input_tokens??0}) · out ${u.output_tokens??'-'}`;
+  d.appendChild(diag);
+  (r.guard_hits||[]).forEach(h=>{ const g=document.createElement('div'); g.className='guard'; g.innerHTML=`<b>${h.label}</b> <span class="hint">${h.code}</span><br>${h.evidence}`; d.appendChild(g); });
+  if(r.error){ const e=document.createElement('div'); e.className='err'; e.textContent=r.error; d.appendChild(e); }
+  log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+
+async function send(text, expected){
+  if(busy || !text.trim()) return null;
+  busy=true; $('#send').disabled=true;
+  addNurse(text);
+  const typing=document.createElement('div'); typing.className='msg sys'; typing.textContent='나미 생각 중…'; log.appendChild(typing);
+  try{
+    const r = await api('/api/chat',{method:'POST',body:JSON.stringify({session_id:sessionId,text,expected_intent:expected||null})});
+    typing.remove(); addNami(r);
+    stats.total++; if(r.intent_match) stats.intent++; stats.guard += (r.guard_hits||[]).length;
+    renderStats(); applyState(r.state);
+    return r;
+  }catch(e){ typing.remove(); sys('요청 실패: '+e.message); return null; }
+  finally{ busy=false; $('#send').disabled=false; $('#input').focus(); }
+}
+
+function renderStats(){ $('#summary').hidden=false; $('#sTotal').textContent=stats.total; $('#sIntent').textContent=stats.intent; $('#sGuard').textContent=stats.guard; }
+
+// ---------- state panel
+function applyState(st){
+  if(!st) return;
+  const rep = st.report_log && st.report_log.length ? st.report_log[st.report_log.length-1].status : 'none';
+  $('#stReport').value = rep;
+  $('#stPatient').value = String(st.patient_clear_of_path);
+  $('#stAuth').value = String(st.retry_authorized);
+  $('#stRetryReq').checked = !!st.retry_requested;
+  $('#stExec').checked = !!st.retry_execution_confirmed;
+}
+async function pushState(){
+  const rep=$('#stReport').value;
+  const body={
+    report_log: rep==='none'?[]:[{recipient:'담당 간호사',status:rep,channel:'ward_messenger',note:''}],
+    retry_requested: $('#stRetryReq').checked,
+    retry_execution_confirmed: $('#stExec').checked,
+  };
+  const p=$('#stPatient').value, a=$('#stAuth').value;
+  if(p==='null') body.clear_patient=true; else body.patient_clear_of_path=(p==='true');
+  if(a==='null') body.clear_authorized=true; else body.retry_authorized=(a==='true');
+  try{ const r=await api(`/api/sessions/${sessionId}/state`,{method:'PUT',body:JSON.stringify(body)}); sys('런타임 상태 갱신됨'); refreshPrompt(); }
+  catch(e){ sys('상태 갱신 실패: '+e.message); }
+}
+['#stReport','#stPatient','#stAuth','#stRetryReq','#stExec'].forEach(s=>$(s).addEventListener('change',pushState));
+
+async function refreshPrompt(){
+  try{ const p=await api(`/api/prompt?session_id=${sessionId}`); $('#promptView').textContent = p.stable + '\n\n' + p.runtime; }catch(e){}
+}
+
+// ---------- chips
+function chip(cmd, target){
+  const c=document.createElement('span'); c.className='chip'; c.innerHTML=`<small>${cmd.intent.split('_')[0]}</small>${cmd.text}`;
+  c.onclick=()=>send(cmd.text, cmd.intent); target.appendChild(c);
+}
+
+async function runList(list){
+  if(busy) return;
+  sys(`자동 실행 시작 (${list.length}개)`);
+  for(const cmd of list){ await send(cmd.text, cmd.intent); await new Promise(r=>setTimeout(r,250)); }
+  sys('자동 실행 완료');
+}
+$('#runAll').onclick=()=>runList(scenario.demo_commands);
+$('#runExtra').onclick=()=>runList(scenario.extra_commands);
+
+// ---------- session
+async function newSession(){
+  const r=await api('/api/sessions',{method:'POST'}); sessionId=r.session_id; applyState(r.state);
+  log.innerHTML=''; Object.assign(stats,{total:0,intent:0,guard:0}); $('#summary').hidden=true;
+  sys(`새 세션 ${sessionId}`); refreshPrompt();
+}
+$('#resetSess').onclick=async()=>{ await api(`/api/sessions/${sessionId}/reset?keep_state=true`,{method:'POST'}); log.innerHTML=''; Object.assign(stats,{total:0,intent:0,guard:0}); $('#summary').hidden=true; sys('대화 초기화 (상태 유지)'); };
+$('#resetAll').onclick=async()=>{ const r=await api(`/api/sessions/${sessionId}/reset?keep_state=false`,{method:'POST'}); applyState(r.state); log.innerHTML=''; Object.assign(stats,{total:0,intent:0,guard:0}); $('#summary').hidden=true; sys('대화와 상태 초기화'); refreshPrompt(); };
+$('#exportBtn').onclick=async()=>{ const s=await api(`/api/sessions/${sessionId}`); const blob=new Blob([JSON.stringify(s,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`nami-session-${sessionId}.json`; a.click(); };
+
+$('#send').onclick=()=>{ const t=$('#input').value; $('#input').value=''; send(t); };
+$('#input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#send').click(); } });
+
+// ---------- boot
+(async function(){
+  try{
+    const h=await api('/api/health');
+    $('#health').innerHTML = `<span class="dot ${h.api_key_present?'ok':''}"></span>${h.provider} · ${h.model} · effort ${h.effort}${h.mock?' · MOCK (offline)':(h.api_key_present?'':' · API 키 없음')}`;
+    scenario=await api('/api/scenario');
+    scenario.demo_commands.forEach(c=>chip(c,$('#demoChips')));
+    scenario.extra_commands.forEach(c=>chip(c,$('#extraChips')));
+    const g=scenario.ground_truth, f=$('#facts');
+    const li=(k,v)=>{ const e=document.createElement('li'); e.innerHTML=`<span class="k">${k}</span> ${v}`; f.appendChild(e); };
+    li('장소', g.setting); li('지시자', g.assigned_by); li('보고 대상', g.report_recipient);
+    g.collected.forEach(c=>li('수거 완료', `${c.item} ${c.count}장 → ${c.now_at}`));
+    g.not_collected.forEach(n=>li('미수거', `${n.item} ${n.count}장 · ${n.now_at}`));
+    li('상태', g.overall_status);
+    await newSession();
+  }catch(e){ $('#health').innerHTML=`<span class="dot"></span>server error`; sys('서버 연결 실패: '+e.message); }
+})();
+</script>
+</body>
+</html>
