@@ -73,6 +73,13 @@
   .stat span{font-size:12px;color:var(--muted)}
   details pre{font:12px/1.45 var(--mono);white-space:pre-wrap;background:var(--chip);padding:10px;border-radius:8px;max-height:320px;overflow:auto}
   .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+  #mic{min-width:44px;font-size:18px;line-height:1}
+  #mic.listening{background:var(--bad);color:#fff;border-color:transparent;animation:pulse 1.2s infinite}
+  #mic.speaking{background:var(--ok);color:#fff;border-color:transparent}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(192,57,43,.45)}70%{box-shadow:0 0 0 10px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
+  .voicebar{display:flex;gap:14px;align-items:center;padding:6px 12px 0;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .voicebar label{display:flex;gap:5px;align-items:center;cursor:pointer}
+  .interim{color:var(--muted);font-style:italic}
 </style>
 </head>
 <body>
@@ -86,8 +93,15 @@
 <main>
   <div class="panel chat">
     <div class="log" id="log"></div>
+    <div class="voicebar">
+      <label><input type="checkbox" id="ttsOn" checked> 나미 음성 재생</label>
+      <label><input type="checkbox" id="convMode"> 연속 대화 (답변 후 자동으로 다시 듣기)</label>
+      <select id="voiceSel" title="TTS voice"></select>
+      <span id="voiceStatus"></span>
+    </div>
     <div class="compose">
-      <input id="input" placeholder="간호사 발화를 입력하세요 (Enter로 전송)" autocomplete="off">
+      <button id="mic" title="말하기 (클릭하여 시작/중지)">🎤</button>
+      <input id="input" placeholder="간호사 발화를 입력하거나 🎤로 말하세요" autocomplete="off">
       <button class="primary" id="send">전송</button>
     </div>
   </div>
@@ -196,7 +210,7 @@ async function send(text, expected){
   const typing=document.createElement('div'); typing.className='msg sys'; typing.textContent='나미 생각 중…'; log.appendChild(typing);
   try{
     const r = await api('/api/chat',{method:'POST',body:JSON.stringify({session_id:sessionId,text,expected_intent:expected||null})});
-    typing.remove(); addNami(r);
+    typing.remove(); addNami(r); speak(r.speech);
     stats.total++; if(r.intent_match) stats.intent++; stats.guard += (r.guard_hits||[]).length;
     renderStats(); applyState(r.state);
     return r;
@@ -262,6 +276,59 @@ $('#exportBtn').onclick=async()=>{ const s=await api(`/api/sessions/${sessionId}
 
 $('#send').onclick=()=>{ const t=$('#input').value; $('#input').value=''; send(t); };
 $('#input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#send').click(); } });
+
+// ---------- voice (Web Speech API: STT ko-KR + TTS)
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn=$('#mic'), voiceStatus=$('#voiceStatus'), voiceSel=$('#voiceSel');
+let rec=null, listening=false, wantListen=false;
+
+function loadVoices(){
+  const vs=speechSynthesis.getVoices(); if(!vs.length) return;
+  const ko=vs.filter(v=>/^ko/i.test(v.lang)); const list=ko.length?ko:vs;
+  voiceSel.innerHTML=''; list.forEach(v=>{ const o=document.createElement('option'); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; voiceSel.appendChild(o); });
+  try{ const saved=localStorage.getItem('nami-voice'); if(saved && list.some(v=>v.name===saved)) voiceSel.value=saved; }catch(e){}
+  if(!ko.length) voiceStatus.textContent='한국어 TTS 음성이 없습니다 (OS에서 한국어 음성을 설치하세요)';
+}
+if('speechSynthesis' in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; } else { $('#ttsOn').checked=false; $('#ttsOn').disabled=true; }
+voiceSel.onchange=()=>{ try{localStorage.setItem('nami-voice',voiceSel.value)}catch(e){} };
+
+function speak(text){
+  if(!$('#ttsOn').checked || !('speechSynthesis' in window) || !text) { if($('#convMode').checked) startListening(); return; }
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text); u.lang='ko-KR'; u.rate=1.0;
+  const v=speechSynthesis.getVoices().find(v=>v.name===voiceSel.value); if(v) u.voice=v;
+  u.onstart=()=>{ micBtn.classList.add('speaking'); voiceStatus.textContent='나미 말하는 중…'; };
+  u.onend=u.onerror=()=>{ micBtn.classList.remove('speaking'); voiceStatus.textContent=''; if($('#convMode').checked && !busy) startListening(); };
+  speechSynthesis.speak(u);
+}
+
+function startListening(){
+  if(!SR){ voiceStatus.textContent='이 브라우저는 음성 인식을 지원하지 않습니다 (Chrome/Safari 사용)'; return; }
+  if(listening) return;
+  speechSynthesis.cancel();
+  rec=new SR(); rec.lang='ko-KR'; rec.interimResults=true; rec.maxAlternatives=1; rec.continuous=false;
+  let finalText='';
+  rec.onstart=()=>{ listening=true; micBtn.classList.add('listening'); voiceStatus.textContent='듣는 중… 말씀하세요'; $('#input').value=''; };
+  rec.onresult=(e)=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){ const t=e.results[i][0].transcript; if(e.results[i].isFinal) finalText+=t; else interim+=t; }
+    $('#input').value = finalText || interim;
+  };
+  rec.onerror=(e)=>{ voiceStatus.textContent = e.error==='not-allowed' ? '마이크 권한이 필요합니다' : (e.error==='no-speech' ? '음성이 감지되지 않았습니다' : '인식 오류: '+e.error); };
+  rec.onend=()=>{
+    listening=false; micBtn.classList.remove('listening');
+    const text=(finalText||$('#input').value).trim();
+    if(text){ voiceStatus.textContent=''; $('#input').value=''; send(text); }
+    else if($('#convMode').checked && wantListen && !busy){ setTimeout(startListening,400); }
+    else if(!voiceStatus.textContent) voiceStatus.textContent='';
+  };
+  wantListen=true; rec.start();
+}
+function stopListening(){ wantListen=false; if(rec && listening){ rec.stop(); } }
+micBtn.onclick=()=>{ if(listening) stopListening(); else startListening(); };
+$('#convMode').addEventListener('change',e=>{ if(e.target.checked && !listening && !busy) startListening(); if(!e.target.checked) stopListening(); });
+document.addEventListener('keydown',e=>{ if(e.code==='Space' && document.activeElement!==$('#input') && !e.repeat){ e.preventDefault(); micBtn.click(); } });
+if(!SR){ micBtn.disabled=true; micBtn.title='음성 인식 미지원 브라우저'; }
 
 // ---------- boot
 (async function(){
