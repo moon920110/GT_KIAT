@@ -25,7 +25,8 @@ from typing import Any, Optional
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+# .env wins over already-exported shell variables, so a stale key in ~/.zshrc cannot shadow it.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 from .guards import check_speech  # noqa: E402
 from .prompt import STABLE_SYSTEM_PROMPT, runtime_block  # noqa: E402
