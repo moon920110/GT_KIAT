@@ -111,7 +111,7 @@
       <h2>실증 명령어 (8종)</h2>
       <p class="hint" style="margin:0 0 4px">린넨 수거 상황 보고</p>
       <div class="chips" id="demoChipsLinen"></div>
-      <p class="hint" style="margin:8px 0 4px">환자 상황 보고 (낙상 이벤트가 꺼져 있으면 클릭 시 자동으로 켭니다)</p>
+      <p class="hint" style="margin:8px 0 4px">환자 상황 보고 (낙상은 이미 발생한 고정 사실)</p>
       <div class="chips" id="demoChipsFall"></div>
       <div class="actions">
         <button class="primary" id="runAll">8종 순서대로 자동 실행</button>
@@ -143,8 +143,7 @@
       <div class="row"><label>재수거 실행 확인 (완료)</label><input type="checkbox" id="stExec"></div>
       <div class="row"><label>향후 처리 방식 (간호사 확정)</label>
         <select id="stPref"><option value="NONE">없음 (아직 안 물어봄)</option><option value="LEAVE_UNTOUCHED">물건·린넨 그대로 둠</option><option value="ASK_NURSE_FIRST">먼저 간호사에게 확인</option></select></div>
-      <p class="hint" style="margin:8px 0 4px">시나리오 B · 환자 낙상</p>
-      <div class="row"><label>낙상 이벤트 (응급 호출 버튼)</label><input type="checkbox" id="stFall"></div>
+      <p class="hint" style="margin:8px 0 4px">시나리오 B · 환자 낙상 (이미 발생함)</p>
       <div class="row"><label>발생 시점 (약 N분 전)</label><input type="number" id="stFallMin" min="0" max="999" value="2" style="width:70px"></div>
       <div class="actions">
         <button id="resetSess">대화 초기화</button>
@@ -236,7 +235,6 @@ function applyState(st){
   $('#stRetryReq').checked = !!st.retry_requested;
   $('#stExec').checked = !!st.retry_execution_confirmed;
   $('#stPref').value = st.future_preference || 'NONE';
-  $('#stFall').checked = !!st.fall_event_active;
   $('#stFallMin').value = st.fall_minutes_ago ?? 2;
 }
 function readStatePanel(){
@@ -244,7 +242,6 @@ function readStatePanel(){
     retry_requested: $('#stRetryReq').checked,
     retry_execution_confirmed: $('#stExec').checked,
     future_preference: $('#stPref').value,
-    fall_event_active: $('#stFall').checked,
     fall_minutes_ago: parseInt($('#stFallMin').value||'2',10),
     unset: [],
   };
@@ -257,11 +254,7 @@ async function putState(body, note){
   catch(e){ sys('상태 갱신 실패: '+e.message); return null; }
 }
 async function pushState(){ await putState(readStatePanel()); }
-async function ensureFallActive(){
-  if(currentState && currentState.fall_event_active) return;
-  await putState({fall_event_active:true}, '응급 호출: 낙상 이벤트 활성화 (간호사 알림 전송됨)');
-}
-['#stPhone','#stSafe','#stAuth','#stRetryReq','#stExec','#stPref','#stFall','#stFallMin'].forEach(s=>$(s).addEventListener('change',pushState));
+['#stPhone','#stSafe','#stAuth','#stRetryReq','#stExec','#stPref','#stFallMin'].forEach(s=>$(s).addEventListener('change',pushState));
 
 async function refreshPrompt(){
   try{ const p=await api(`/api/prompt?session_id=${sessionId}`); $('#promptView').textContent = p.stable + '\n\n' + p.runtime; }catch(e){}
@@ -270,16 +263,13 @@ async function refreshPrompt(){
 // ---------- chips
 function chip(cmd, target){
   const c=document.createElement('span'); c.className='chip'; c.innerHTML=`<small>${cmd.intent.replace('_',' ')}</small>${cmd.text}`;
-  c.onclick=async()=>{ if(busy) return; if(cmd.scenario==='fall') await ensureFallActive(); send(cmd.text, cmd.intent); }; target.appendChild(c);
+  c.onclick=()=>send(cmd.text, cmd.intent); target.appendChild(c);
 }
 
 async function runList(list){
   if(busy) return;
   sys(`자동 실행 시작 (${list.length}개)`);
-  for(const cmd of list){
-    if(cmd.scenario==='fall') await ensureFallActive();
-    await send(cmd.text, cmd.intent); await new Promise(r=>setTimeout(r,250));
-  }
+  for(const cmd of list){ await send(cmd.text, cmd.intent); await new Promise(r=>setTimeout(r,250)); }
   sys('자동 실행 완료');
 }
 $('#runAll').onclick=()=>runList(scenario.demo_commands);
@@ -367,7 +357,7 @@ if(!SR){ micBtn.disabled=true; micBtn.title='음성 인식 미지원 브라우�
     L.collected.forEach(c=>li('A · 수거 완료', `${c.item} ${c.count}장 → ${c.now_at}`));
     L.not_collected.forEach(n=>li('A · 미수거', `${n.item} ${n.count}장 · ${n.now_at} · ${n.obstacle}`));
     li('A · 상태', L.overall_status);
-    li('B · 발생 조건', `${F.trigger} (런타임 '낙상 이벤트'가 켜졌을 때만)`);
+    li('B · 발생', `${F.trigger} · 이미 발생한 낙상 (약 N분 전은 런타임 값)`);
     F.sequence.forEach((x,i)=>li(`B · 관찰 ${i+1}`, x));
     li('B · 부상', F.injury_status);
     await newSession();

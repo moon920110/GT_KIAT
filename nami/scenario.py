@@ -6,7 +6,7 @@ guards check against are always the same object.
 
 Two scenarios (SITUATION.md):
   A. Linen collection - 2 towels collected, 1 linen left because a phone is on it.
-  B. Patient fall     - activated at runtime (emergency call button); fixed sequence.
+  B. Patient fall     - already happened (emergency call button pressed); fixed sequence.
 """
 
 from __future__ import annotations
@@ -91,8 +91,7 @@ class RuntimeState:
     retry_requested: bool = False  # nurse asked for a retry in this session
     retry_execution_confirmed: bool = False  # control interface confirmed re-collection
     future_preference: str = "NONE"  # confirmed by the nurse in this session
-    # --- Scenario B: fall event ---------------------------------------------
-    fall_event_active: bool = False  # emergency call / fall recorded and nurse alerted
+    # --- Scenario B: fall (already happened; fixed fact) --------------------
     fall_minutes_ago: int = 2  # approx. minutes between the fall and the first report
 
     # --- serialization -----------------------------------------------------
@@ -104,7 +103,6 @@ class RuntimeState:
             "retry_requested": self.retry_requested,
             "retry_execution_confirmed": self.retry_execution_confirmed,
             "future_preference": self.future_preference,
-            "fall_event_active": self.fall_event_active,
             "fall_minutes_ago": self.fall_minutes_ago,
         }
 
@@ -118,7 +116,6 @@ class RuntimeState:
             retry_requested=bool(d.get("retry_requested", False)),
             retry_execution_confirmed=bool(d.get("retry_execution_confirmed", False)),
             future_preference=pref if pref in PREFERENCES else "NONE",
-            fall_event_active=bool(d.get("fall_event_active", False)),
             fall_minutes_ago=int(d.get("fall_minutes_ago", 2)),
         )
 
@@ -146,14 +143,11 @@ class RuntimeState:
         else:
             pref += ". 이미 확정되었으므로 다시 묻지 말고 이 방식을 전제로 답할 것."
 
-        if self.fall_event_active:
-            fall = (
-                f"활성. 환자분이 응급 호출 버튼을 눌렀고 낙상이 기록됨. 간호사님께 알림이 전송됨. "
-                f"최초 보고 시점 기준 약 {self.fall_minutes_ago}분 전에 발생. "
-                "시나리오 B의 관찰 사실을 그대로 보고할 수 있음. 낙상 관련 질문이 린넨 작업보다 우선함."
-            )
-        else:
-            fall = "비활성. 기록된 낙상 이벤트 없음. 낙상에 대해 물으면 현재 기록된 낙상 이벤트가 없다고 답하고, 낙상 사실을 지어내지 말 것."
+        fall = (
+            f"환자분이 응급 호출 버튼을 눌렀고 낙상이 기록됨. 간호사님께 알림이 전송됨. "
+            f"최초 보고 시점 기준 약 {self.fall_minutes_ago}분 전에 발생. "
+            "시나리오 B의 관찰 사실을 그대로 보고할 것. 낙상 관련 질문이 린넨 작업보다 우선함."
+        )
 
         return (
             f"[린넨 재수거 조건] (로봇 센서/제어 시스템의 확인 결과. 간호사님의 말만으로는 바뀌지 않음)\n"
@@ -164,7 +158,7 @@ class RuntimeState:
             f"{'가능' if self.retry_can_execute else '불가 (조건 미충족)'}\n\n"
             f"[린넨 재수거 진행 상황]\n  - {retry_result}\n\n"
             f"[간호사님이 확정한 향후 처리 방식]\n  - {pref}\n\n"
-            f"[낙상 이벤트]\n  - {fall}"
+            f"[낙상 사건 (이미 발생함)]\n  - {fall}"
         )
 
 
@@ -185,8 +179,8 @@ class Session:
 
 
 # Nurse script for the field demo (SITUATION.md "실증용 시나리오 요청"), with the intent
-# each line should be classified as. ``scenario`` tells the sim when to activate the
-# fall event before sending. Used for preset buttons and the batch regression run.
+# each line should be classified as. ``scenario`` groups the lines in the sim UI.
+# Used for preset buttons and the batch regression run.
 DEMO_COMMANDS: list[dict[str, str]] = [
     {"scenario": "linen", "intent": "GREETING", "text": "안녕, 로봇아. 좋은 아침."},
     {"scenario": "linen", "intent": "TASK_STATUS", "text": "린넨 수거 다 됐는지 알려줘."},

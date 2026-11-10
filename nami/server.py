@@ -55,7 +55,6 @@ class StateIn(BaseModel):
     retry_requested: Optional[bool] = None
     retry_execution_confirmed: Optional[bool] = None
     future_preference: Optional[str] = None
-    fall_event_active: Optional[bool] = None
     fall_minutes_ago: Optional[int] = None
     unset: list[str] = []
 
@@ -134,8 +133,6 @@ def put_state(session_id: str, body: StateIn):
         if body.future_preference not in PREFERENCES:
             raise HTTPException(422, f"future_preference must be one of {PREFERENCES}")
         st.future_preference = body.future_preference
-    if body.fall_event_active is not None:
-        st.fall_event_active = body.fall_event_active
     if body.fall_minutes_ago is not None:
         st.fall_minutes_ago = max(0, body.fall_minutes_ago)
     return {"session_id": s.id, "state": st.to_dict(), "runtime_block": runtime_block(st)}

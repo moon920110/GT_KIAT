@@ -37,7 +37,6 @@ def _answer(nurse_text: str, runtime_text: str) -> dict:
             intent = it
             break
 
-    fall_active = "낙상 이벤트]\n  - 활성" in runtime_text
     exec_confirmed = "실행 확인됨" in runtime_text
     can_execute = "요청할 수 있음: 가능" in runtime_text
     pref_known = "이미 확정되었으므로" in runtime_text
@@ -73,12 +72,10 @@ def _answer(nurse_text: str, runtime_text: str) -> dict:
             pref = "LEAVE_UNTOUCHED"
             speech = "알겠습니다. 앞으로 린넨 위에 물건이 있으면 임의로 움직이지 않고 린넨도 그대로 두겠습니다."
     elif intent == "FALL_INCIDENT":
-        speech = (f"약 {minutes}분 전 환자분이 침대에서 내려오다가 넘어지셨습니다. 현재 부상 여부는 확인되지 않았습니다." if fall_active
-                  else "현재 기록된 낙상 이벤트는 없습니다.")
+        speech = f"약 {minutes}분 전 환자분이 침대에서 내려오다가 넘어지셨습니다. 현재 부상 여부는 확인되지 않았습니다."
+
     elif intent == "FALL_DETAILS":
-        if not fall_active:
-            speech = "현재 기록된 낙상 이벤트가 없어 말씀드릴 내용이 없습니다."
-        elif "다친" in nurse_text or "다쳤" in nurse_text:
+        if "다친" in nurse_text or "다쳤" in nurse_text:
             speech = "다리가 바닥에 부딪친 것은 관찰했지만 실제 손상 여부는 확인되지 않았습니다. 의료진의 직접 평가가 필요합니다."
         else:
             speech = ("넘어지면서 다리가 바닥에 부딪쳤습니다. 이후 침대 난간을 잡고 두 차례 몸을 일으키려 했지만 실패했고, "

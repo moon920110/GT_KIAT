@@ -43,12 +43,10 @@ def test_prompt_reflects_revised_scenario():
 
 
 def test_demo_script_linen_then_fall():
-    """The nurse script from SITUATION.md, with the fall event activated between the two parts."""
+    """The nurse script from SITUATION.md: linen part, then the (already happened) fall part."""
     agent = NamiAgent()
     s = agent.new_session()
     for cmd in DEMO_COMMANDS:
-        if cmd["scenario"] == "fall" and not s.state.fall_event_active:
-            s.state.fall_event_active = True  # emergency call button pressed
         r = agent.respond(s, cmd["text"])
         assert r.intent == cmd["intent"], (cmd, r.intent)
         assert not r.guard_hits, (cmd, r.guard_hits)
@@ -65,7 +63,6 @@ def test_demo_script_linen_then_fall():
 def test_extra_commands_classify():
     agent = NamiAgent()
     s = agent.new_session()
-    s.state.fall_event_active = True
     for cmd in EXTRA_COMMANDS:
         r = agent.respond(s, cmd["text"])
         assert r.intent == cmd["intent"], (cmd, r.intent)
@@ -91,13 +88,12 @@ def test_runtime_state_reaches_prompt():
     assert "완료" in r.speech and not r.guard_hits, r.guard_hits
 
 
-def test_fall_inactive_does_not_invent_fall():
+def test_fall_is_known_without_any_runtime_trigger():
     agent = NamiAgent()
     s = agent.new_session()
     r = agent.respond(s, "환자가 어떻게 넘어지게 된 건지 알려줘.")
-    assert r.intent == "FALL_INCIDENT" and "없습니다" in r.speech and not r.guard_hits
+    assert r.intent == "FALL_INCIDENT" and "넘어지셨습니다" in r.speech and "약 2분 전" in r.speech and not r.guard_hits
     s.state.fall_minutes_ago = 5
-    s.state.fall_event_active = True
     r = agent.respond(s, "환자가 어떻게 넘어지게 된 건지 알려줘.")
     assert "약 5분 전" in r.speech
 
@@ -110,13 +106,12 @@ def test_guards_flag_forbidden_claims():
         ("린넨 세 장을 모두 수거했습니다.", "FALSE_COMPLETION"),
         ("휴대전화가 제거된 것을 확인했습니다. 남은 린넨 수거를 진행하겠습니다.", "FALSE_VERIFICATION"),
         ("수건 네 장을 수거했습니다.", "INVENTED_COUNT"),
-        ("약 2분 전 환자분이 침대에서 내려오다가 넘어지셨습니다.", "FALL_WITHOUT_EVENT"),
+        ("현재 기록된 낙상 이벤트는 없습니다.", "FALL_DENIED"),
     ]
     for speech, code in bad:
         codes = {h.code for h in check_speech(speech, st)}
         assert code in codes, (speech, codes)
 
-    st.fall_event_active = True
     bad_fall = [
         ("넘어지면서 다리가 골절되었습니다.", "CLINICAL_CLAIM"),
         ("환자분은 다치지 않았습니다.", "UNINJURED_CLAIM"),

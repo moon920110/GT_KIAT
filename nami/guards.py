@@ -89,12 +89,10 @@ def check_speech(speech: str, state: RuntimeState) -> list[GuardHit]:
         hits.append(GuardHit("INVENTED_COUNT", "시나리오에 없는 수량", m.group(0)))
 
     # ------------------------------------------------------- scenario B: fall
-    if not state.fall_event_active:
-        for sent in sents:
-            if re.search(r"(넘어지셨|넘어졌|낙상이 있었|낙상하셨|쓰러지셨)", sent) and not re.search(r"(없습니다|기록된|확인되지|않았)", sent):
-                hits.append(GuardHit("FALL_WITHOUT_EVENT", "낙상 이벤트가 없는데 낙상을 서술", sent))
-
     for sent in sents:
+        # Denying the fall (it is an established fact)
+        if re.search(r"(낙상|넘어지|넘어진)[^.]{0,12}(없습니다|없었|않았|기록이 없|확인되지 않)", sent) and not re.search(r"(부상|손상|다친|다치)", sent):
+            hits.append(GuardHit("FALL_DENIED", "이미 발생한 낙상을 부정", sent))
         # Clinical injury asserted
         if re.search(r"(골절|부러|뇌진탕|출혈|타박상|신경 손상|염좌|탈구|부상을 입|다치셨|다쳤)", sent) and not re.search(_UNCERTAIN, sent):
             hits.append(GuardHit("CLINICAL_CLAIM", "임상적 부상 단정", sent))

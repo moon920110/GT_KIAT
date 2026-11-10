@@ -5,7 +5,7 @@ Slash commands change the runtime state the robot would normally provide:
   /safe on|off|unset      안전 수거 가능 여부
   /auth on|off|unset      재수거 권한
   /exec on|off            재수거 실행 확인
-  /fall on|off [minutes]  낙상 이벤트 활성화 (응급 호출)
+  /fall <minutes>         낙상 발생 시점 (약 N분 전)
   /state                  현재 런타임 상태 출력
 """
 
@@ -29,10 +29,8 @@ def _apply(state: RuntimeState, cmd: str) -> str:
         setattr(state, attr, _TRI[args[0]])
     elif name == "exec" and args and args[0] in ("on", "off"):
         state.retry_execution_confirmed = args[0] == "on"
-    elif name == "fall" and args and args[0] in ("on", "off"):
-        state.fall_event_active = args[0] == "on"
-        if len(args) > 1 and args[1].isdigit():
-            state.fall_minutes_ago = int(args[1])
+    elif name == "fall" and args and args[0].isdigit():
+        state.fall_minutes_ago = int(args[0])
     else:
         return "unknown command\n" + (__doc__ or "")
     return "runtime state updated"

@@ -8,9 +8,8 @@ Usage (robot integration):
     tts.say(reply.speech)
     if reply.requested_action == "REQUEST_RETRY": control.request_collection(...)
     if reply.end_conversation: ...
-    session.state.fall_event_active = True       # when the emergency call fires
 
-Runtime facts (retry conditions, fall event) live on ``session.state`` and are
+Runtime facts (retry conditions, fall timing) live on ``session.state`` and are
 owned by the robot runtime. Update them there and the next reply reflects them.
 The agent itself writes two things back: ``retry_requested`` and the nurse's
 confirmed ``future_preference``.
