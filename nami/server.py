@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -17,16 +17,18 @@ from pydantic import BaseModel
 
 from .agent import NamiAgent
 from .prompt import STABLE_SYSTEM_PROMPT, runtime_block
-from .scenario import DEMO_COMMANDS, EXTRA_COMMANDS, GROUND_TRUTH, INTENTS, RuntimeState, Session
+from .scenario import DEMO_COMMANDS, EXTRA_COMMANDS, GROUND_TRUTH, INTENTS, PREFERENCE_LABELS, PREFERENCES, RuntimeState, Session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("nami.server")
 
 SIM_DIR = Path(__file__).resolve().parent.parent / "sim"
 
-app = FastAPI(title="Nami Agent Sim", version="0.1.0")
+app = FastAPI(title="Nami Agent Sim", version="0.2.0")
 agent = NamiAgent()
 sessions: dict[str, Session] = {}
+
+TRI_FIELDS = ("phone_removed_verified", "collection_safe", "retry_authorized")
 
 
 def _get(session_id: str) -> Session:
@@ -44,14 +46,18 @@ class ChatIn(BaseModel):
 
 
 class StateIn(BaseModel):
-    report_log: Optional[list[dict[str, Any]]] = None
-    patient_clear_of_path: Optional[bool] = None
+    """Partial update: None means "don't touch". Put a tri-state field name in
+    ``unset`` to reset it to unconfirmed."""
+
+    phone_removed_verified: Optional[bool] = None
+    collection_safe: Optional[bool] = None
     retry_authorized: Optional[bool] = None
     retry_requested: Optional[bool] = None
     retry_execution_confirmed: Optional[bool] = None
-    # explicit "set to unconfirmed" flags (None above means "don't touch")
-    clear_patient: bool = False
-    clear_authorized: bool = False
+    future_preference: Optional[str] = None
+    fall_event_active: Optional[bool] = None
+    fall_minutes_ago: Optional[int] = None
+    unset: list[str] = []
 
 
 # ------------------------------------------------------------------ routes
@@ -78,6 +84,8 @@ def scenario():
     return {
         "ground_truth": GROUND_TRUTH,
         "intents": INTENTS,
+        "preferences": PREFERENCES,
+        "preference_labels": PREFERENCE_LABELS,
         "demo_commands": DEMO_COMMANDS,
         "extra_commands": EXTRA_COMMANDS,
     }
@@ -113,20 +121,23 @@ def reset_session(session_id: str, keep_state: bool = True):
 def put_state(session_id: str, body: StateIn):
     s = _get(session_id)
     st = s.state
-    if body.report_log is not None:
-        st.report_log = RuntimeState.from_dict({"report_log": body.report_log}).report_log
-    if body.clear_patient:
-        st.patient_clear_of_path = None
-    elif body.patient_clear_of_path is not None:
-        st.patient_clear_of_path = body.patient_clear_of_path
-    if body.clear_authorized:
-        st.retry_authorized = None
-    elif body.retry_authorized is not None:
-        st.retry_authorized = body.retry_authorized
+    for name in TRI_FIELDS:
+        if name in body.unset:
+            setattr(st, name, None)
+        elif getattr(body, name) is not None:
+            setattr(st, name, getattr(body, name))
     if body.retry_requested is not None:
         st.retry_requested = body.retry_requested
     if body.retry_execution_confirmed is not None:
         st.retry_execution_confirmed = body.retry_execution_confirmed
+    if body.future_preference is not None:
+        if body.future_preference not in PREFERENCES:
+            raise HTTPException(422, f"future_preference must be one of {PREFERENCES}")
+        st.future_preference = body.future_preference
+    if body.fall_event_active is not None:
+        st.fall_event_active = body.fall_event_active
+    if body.fall_minutes_ago is not None:
+        st.fall_minutes_ago = max(0, body.fall_minutes_ago)
     return {"session_id": s.id, "state": st.to_dict(), "runtime_block": runtime_block(st)}
 
 

@@ -84,7 +84,7 @@
 </head>
 <body>
 <header>
-  <h1>나미 · 린넨 수거 보고 에이전트 시뮬레이터</h1>
+  <h1>나미 · 병동 보조 로봇 대화 시뮬레이터 (린넨 수거 · 환자 낙상)</h1>
   <span class="meta" id="health"><span class="dot"></span>connecting…</span>
   <span class="spacer"></span>
   <button id="themeBtn" title="theme">◐</button>
@@ -108,10 +108,13 @@
 
   <aside class="side">
     <section class="panel">
-      <h2>실증 명령어 (9종)</h2>
-      <div class="chips" id="demoChips"></div>
+      <h2>실증 명령어 (8종)</h2>
+      <p class="hint" style="margin:0 0 4px">린넨 수거 상황 보고</p>
+      <div class="chips" id="demoChipsLinen"></div>
+      <p class="hint" style="margin:8px 0 4px">환자 상황 보고 (낙상 이벤트가 꺼져 있으면 클릭 시 자동으로 켭니다)</p>
+      <div class="chips" id="demoChipsFall"></div>
       <div class="actions">
-        <button class="primary" id="runAll">9종 순서대로 자동 실행</button>
+        <button class="primary" id="runAll">8종 순서대로 자동 실행</button>
         <button id="runExtra">변형 질문 실행</button>
       </div>
       <div class="summary" id="summary" hidden>
@@ -129,25 +132,26 @@
 
     <section class="panel">
       <h2>런타임 상태 (로봇 시스템 제공)</h2>
-      <div class="row"><label>보고 기록</label>
-        <select id="stReport">
-          <option value="none">기록 없음 (미확인)</option>
-          <option value="pending">전달 대기 중</option>
-          <option value="delivered">담당 간호사 · 전달 완료</option>
-          <option value="failed">담당 간호사 · 전달 실패</option>
-        </select></div>
-      <div class="row"><label>환자 이동경로 밖</label>
-        <select id="stPatient"><option value="null">미확인</option><option value="true">확인됨</option><option value="false">아님</option></select></div>
+      <p class="hint" style="margin:0 0 4px">시나리오 A · 린넨 재수거 조건 (센서/제어 시스템)</p>
+      <div class="row"><label>휴대전화 제거 확인</label>
+        <select id="stPhone"><option value="null">미확인</option><option value="true">확인됨 (제거됨)</option><option value="false">아님 (아직 위에 있음)</option></select></div>
+      <div class="row"><label>안전 수거 가능</label>
+        <select id="stSafe"><option value="null">미확인</option><option value="true">확인됨</option><option value="false">아님</option></select></div>
       <div class="row"><label>재수거 권한</label>
         <select id="stAuth"><option value="null">미확인</option><option value="true">승인됨</option><option value="false">거부됨</option></select></div>
       <div class="row"><label>재수거 요청 접수됨</label><input type="checkbox" id="stRetryReq"></div>
       <div class="row"><label>재수거 실행 확인 (완료)</label><input type="checkbox" id="stExec"></div>
+      <div class="row"><label>향후 처리 방식 (간호사 확정)</label>
+        <select id="stPref"><option value="NONE">없음 (아직 안 물어봄)</option><option value="LEAVE_UNTOUCHED">물건·린넨 그대로 둠</option><option value="ASK_NURSE_FIRST">먼저 간호사에게 확인</option></select></div>
+      <p class="hint" style="margin:8px 0 4px">시나리오 B · 환자 낙상</p>
+      <div class="row"><label>낙상 이벤트 (응급 호출 버튼)</label><input type="checkbox" id="stFall"></div>
+      <div class="row"><label>발생 시점 (약 N분 전)</label><input type="number" id="stFallMin" min="0" max="999" value="2" style="width:70px"></div>
       <div class="actions">
         <button id="resetSess">대화 초기화</button>
         <button id="resetAll">대화+상태 초기화</button>
         <button id="exportBtn">기록 내보내기</button>
       </div>
-      <p class="hint">상태를 바꾸면 다음 발화부터 반영됩니다. 의도 분류는 모델 출력이며, 가드 경고는 규칙 기반 사후 점검입니다.</p>
+      <p class="hint">상태를 바꾸면 다음 발화부터 반영됩니다. 재수거 요청·향후 처리 방식은 모델 출력으로도 갱신됩니다. 의도 분류는 모델 출력이며, 가드 경고는 규칙 기반 사후 점검입니다.</p>
     </section>
 
     <section class="panel">
@@ -190,6 +194,7 @@ function addNami(r){
     const b=document.createElement('span'); b.className='badge '+(r.intent_match?'ok':'bad'); b.textContent = r.intent_match?'의도 일치':`예상 ${r.expected_intent}`; who.appendChild(b);
   }
   if(r.requested_action && r.requested_action!=='NONE'){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='action: '+r.requested_action; who.appendChild(b); }
+  if(r.future_preference && r.future_preference!=='NONE'){ const b=document.createElement('span'); b.className='badge ok'; b.textContent='preference: '+r.future_preference; who.appendChild(b); }
   if(r.end_conversation){ const b=document.createElement('span'); b.className='badge'; b.textContent='end_conversation'; who.appendChild(b); }
   if(r.fallback_used){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='fallback model'; who.appendChild(b); }
   d.appendChild(who);
@@ -221,29 +226,42 @@ async function send(text, expected){
 function renderStats(){ $('#summary').hidden=false; $('#sTotal').textContent=stats.total; $('#sIntent').textContent=stats.intent; $('#sGuard').textContent=stats.guard; }
 
 // ---------- state panel
+let currentState = null;
 function applyState(st){
   if(!st) return;
-  const rep = st.report_log && st.report_log.length ? st.report_log[st.report_log.length-1].status : 'none';
-  $('#stReport').value = rep;
-  $('#stPatient').value = String(st.patient_clear_of_path);
+  currentState = st;
+  $('#stPhone').value = String(st.phone_removed_verified);
+  $('#stSafe').value = String(st.collection_safe);
   $('#stAuth').value = String(st.retry_authorized);
   $('#stRetryReq').checked = !!st.retry_requested;
   $('#stExec').checked = !!st.retry_execution_confirmed;
+  $('#stPref').value = st.future_preference || 'NONE';
+  $('#stFall').checked = !!st.fall_event_active;
+  $('#stFallMin').value = st.fall_minutes_ago ?? 2;
 }
-async function pushState(){
-  const rep=$('#stReport').value;
+function readStatePanel(){
   const body={
-    report_log: rep==='none'?[]:[{recipient:'담당 간호사',status:rep,channel:'ward_messenger',note:''}],
     retry_requested: $('#stRetryReq').checked,
     retry_execution_confirmed: $('#stExec').checked,
+    future_preference: $('#stPref').value,
+    fall_event_active: $('#stFall').checked,
+    fall_minutes_ago: parseInt($('#stFallMin').value||'2',10),
+    unset: [],
   };
-  const p=$('#stPatient').value, a=$('#stAuth').value;
-  if(p==='null') body.clear_patient=true; else body.patient_clear_of_path=(p==='true');
-  if(a==='null') body.clear_authorized=true; else body.retry_authorized=(a==='true');
-  try{ const r=await api(`/api/sessions/${sessionId}/state`,{method:'PUT',body:JSON.stringify(body)}); sys('런타임 상태 갱신됨'); refreshPrompt(); }
-  catch(e){ sys('상태 갱신 실패: '+e.message); }
+  const tri = {'#stPhone':'phone_removed_verified','#stSafe':'collection_safe','#stAuth':'retry_authorized'};
+  for(const [sel,name] of Object.entries(tri)){ const v=$(sel).value; if(v==='null') body.unset.push(name); else body[name]=(v==='true'); }
+  return body;
 }
-['#stReport','#stPatient','#stAuth','#stRetryReq','#stExec'].forEach(s=>$(s).addEventListener('change',pushState));
+async function putState(body, note){
+  try{ const r=await api(`/api/sessions/${sessionId}/state`,{method:'PUT',body:JSON.stringify(body)}); applyState(r.state); sys(note||'런타임 상태 갱신됨'); refreshPrompt(); return r; }
+  catch(e){ sys('상태 갱신 실패: '+e.message); return null; }
+}
+async function pushState(){ await putState(readStatePanel()); }
+async function ensureFallActive(){
+  if(currentState && currentState.fall_event_active) return;
+  await putState({fall_event_active:true}, '응급 호출: 낙상 이벤트 활성화 (간호사 알림 전송됨)');
+}
+['#stPhone','#stSafe','#stAuth','#stRetryReq','#stExec','#stPref','#stFall','#stFallMin'].forEach(s=>$(s).addEventListener('change',pushState));
 
 async function refreshPrompt(){
   try{ const p=await api(`/api/prompt?session_id=${sessionId}`); $('#promptView').textContent = p.stable + '\n\n' + p.runtime; }catch(e){}
@@ -251,14 +269,17 @@ async function refreshPrompt(){
 
 // ---------- chips
 function chip(cmd, target){
-  const c=document.createElement('span'); c.className='chip'; c.innerHTML=`<small>${cmd.intent.split('_')[0]}</small>${cmd.text}`;
-  c.onclick=()=>send(cmd.text, cmd.intent); target.appendChild(c);
+  const c=document.createElement('span'); c.className='chip'; c.innerHTML=`<small>${cmd.intent.replace('_',' ')}</small>${cmd.text}`;
+  c.onclick=async()=>{ if(busy) return; if(cmd.scenario==='fall') await ensureFallActive(); send(cmd.text, cmd.intent); }; target.appendChild(c);
 }
 
 async function runList(list){
   if(busy) return;
   sys(`자동 실행 시작 (${list.length}개)`);
-  for(const cmd of list){ await send(cmd.text, cmd.intent); await new Promise(r=>setTimeout(r,250)); }
+  for(const cmd of list){
+    if(cmd.scenario==='fall') await ensureFallActive();
+    await send(cmd.text, cmd.intent); await new Promise(r=>setTimeout(r,250));
+  }
   sys('자동 실행 완료');
 }
 $('#runAll').onclick=()=>runList(scenario.demo_commands);
@@ -336,14 +357,19 @@ if(!SR){ micBtn.disabled=true; micBtn.title='음성 인식 미지원 브라우�
     const h=await api('/api/health');
     $('#health').innerHTML = `<span class="dot ${h.api_key_present?'ok':''}"></span>${h.provider} · ${h.model} · effort ${h.effort}${h.mock?' · MOCK (offline)':(h.api_key_present?'':' · API 키 없음')}`;
     scenario=await api('/api/scenario');
-    scenario.demo_commands.forEach(c=>chip(c,$('#demoChips')));
+    scenario.demo_commands.forEach(c=>chip(c, c.scenario==='fall'?$('#demoChipsFall'):$('#demoChipsLinen')));
     scenario.extra_commands.forEach(c=>chip(c,$('#extraChips')));
     const g=scenario.ground_truth, f=$('#facts');
     const li=(k,v)=>{ const e=document.createElement('li'); e.innerHTML=`<span class="k">${k}</span> ${v}`; f.appendChild(e); };
-    li('장소', g.setting); li('지시자', g.assigned_by); li('보고 대상', g.report_recipient);
-    g.collected.forEach(c=>li('수거 완료', `${c.item} ${c.count}장 → ${c.now_at}`));
-    g.not_collected.forEach(n=>li('미수거', `${n.item} ${n.count}장 · ${n.now_at}`));
-    li('상태', g.overall_status);
+    const L=g.linen, F=g.fall;
+    li('장소', g.setting);
+    li('A · 작업', `${L.task} (지시: ${L.assigned_by})`);
+    L.collected.forEach(c=>li('A · 수거 완료', `${c.item} ${c.count}장 → ${c.now_at}`));
+    L.not_collected.forEach(n=>li('A · 미수거', `${n.item} ${n.count}장 · ${n.now_at} · ${n.obstacle}`));
+    li('A · 상태', L.overall_status);
+    li('B · 발생 조건', `${F.trigger} (런타임 '낙상 이벤트'가 켜졌을 때만)`);
+    F.sequence.forEach((x,i)=>li(`B · 관찰 ${i+1}`, x));
+    li('B · 부상', F.injury_status);
     await newSession();
   }catch(e){ $('#health').innerHTML=`<span class="dot"></span>server error`; sys('서버 연결 실패: '+e.message); }
 })();

@@ -8,9 +8,12 @@ Usage (robot integration):
     tts.say(reply.speech)
     if reply.requested_action == "REQUEST_RETRY": control.request_collection(...)
     if reply.end_conversation: ...
+    session.state.fall_event_active = True       # when the emergency call fires
 
-Runtime facts (report log, retry conditions) live on ``session.state`` and are
+Runtime facts (retry conditions, fall event) live on ``session.state`` and are
 owned by the robot runtime. Update them there and the next reply reflects them.
+The agent itself writes two things back: ``retry_requested`` and the nurse's
+confirmed ``future_preference``.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 from .guards import check_speech  # noqa: E402
 from .prompt import STABLE_SYSTEM_PROMPT, runtime_block  # noqa: E402
 from .providers import Provider, ProviderResult, make_provider  # noqa: E402
-from .scenario import Session  # noqa: E402
+from .scenario import PREFERENCES, Session  # noqa: E402
 
 log = logging.getLogger("nami")
 
@@ -45,6 +48,7 @@ class AgentReply:
     speech: str
     end_conversation: bool = False
     requested_action: str = "NONE"
+    future_preference: str = "NONE"  # set only on the turn the nurse confirms a preference
     # diagnostics for the sim page
     provider: str = ""
     model: str = ""
@@ -62,6 +66,7 @@ class AgentReply:
             "speech": self.speech,
             "end_conversation": self.end_conversation,
             "requested_action": self.requested_action,
+            "future_preference": self.future_preference,
             "provider": self.provider,
             "model": self.model,
             "latency_ms": self.latency_ms,
@@ -126,6 +131,8 @@ class NamiAgent:
         # Update session memory
         if reply.intent == "RETRY_REQUEST":
             session.state.retry_requested = True
+        if reply.future_preference in PREFERENCES and reply.future_preference != "NONE":
+            session.state.future_preference = reply.future_preference
         if reply.end_conversation:
             session.ended = True
         session.history.append({"role": "user", "content": user_text})
@@ -145,6 +152,7 @@ class NamiAgent:
                 speech=str(data.get("speech", "")).strip() or FALLBACK_SPEECH,
                 end_conversation=bool(data.get("end_conversation", False)),
                 requested_action=str(data.get("requested_action", "NONE")),
+                future_preference=str(data.get("future_preference", "NONE")),
                 raw=result.text,
             )
         except json.JSONDecodeError:
