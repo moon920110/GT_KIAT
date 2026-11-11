@@ -11,6 +11,8 @@ Switching the condition resets the conversation (``agent.set_condition``).
 from __future__ import annotations
 
 import json
+import re
+from difflib import SequenceMatcher
 import logging
 import os
 import time
@@ -31,6 +33,9 @@ from .scenario import SCENARIOS, ExpSession  # noqa: E402
 log = logging.getLogger("exp")
 
 MAX_HISTORY_TURNS = 24
+# Nurse text whose normalized similarity to a scripted question is at least this
+# gets the scripted answer verbatim, with no model call (stimulus stays fixed per condition).
+SCRIPT_MATCH_THRESHOLD = 0.8
 FALLBACK_SPEECH = "죄송합니다, 간호사님. 지금 응답을 생성하지 못했습니다. 다시 한 번 말씀해 주시겠어요?"
 
 
@@ -39,7 +44,7 @@ class ExpReply:
     speech: str
     topic: str = "OTHER"
     end_conversation: bool = False
-    scripted: bool = False  # True for the fixed opening alert
+    scripted: bool = False  # True for the fixed opening alert and for scripted nurse questions
     provider: str = ""
     model: str = ""
     latency_ms: int = 0
@@ -106,6 +111,10 @@ class ExpAgent:
         if not session.alerted:
             self.start(session)
 
+        scripted = self._match_script(session, user_text)
+        if scripted is not None:
+            return self._scripted_reply(session, user_text, *scripted)
+
         stable = PROMPTS[(session.scenario, session.level)]
         history = self._trim(session.history)
         t0 = time.perf_counter()
@@ -131,6 +140,39 @@ class ExpAgent:
         return reply
 
     # ------------------------------------------------------------ internals
+    @staticmethod
+    def _normalize(text: str) -> str:
+        return re.sub(r"[\s\W_]+", "", text).lower()
+
+    def _match_script(self, session: ExpSession, user_text: str) -> Optional[tuple[str, str, str]]:
+        """Return (question_key, topic, answer) when the nurse's text is one of the condition's
+        scripted questions (ignoring spacing/punctuation, allowing minor STT variation)."""
+        sc = SCENARIOS[session.scenario]
+        script = sc["script"][session.level]
+        norm = self._normalize(user_text)
+        if not norm:
+            return None
+        best: Optional[tuple[float, str, str, str]] = None
+        for q in sc["questions"]:
+            if q["key"] not in script:
+                continue
+            ratio = SequenceMatcher(None, norm, self._normalize(q["text"])).ratio()
+            if best is None or ratio > best[0]:
+                best = (ratio, q["key"], q["topic"], script[q["key"]])
+        if best and best[0] >= SCRIPT_MATCH_THRESHOLD:
+            return best[1:]
+        return None
+
+    def _scripted_reply(self, session: ExpSession, user_text: str, key: str, topic: str, answer: str) -> ExpReply:
+        reply = ExpReply(speech=answer, topic=topic, scripted=True, provider="script")
+        payload = json.dumps({"speech": answer, "topic": topic, "end_conversation": False}, ensure_ascii=False)
+        session.history.append({"role": "user", "content": user_text})
+        session.history.append({"role": "assistant", "content": payload})
+        session.transcript.append({"role": "nurse", "text": user_text, "ts": time.time()})
+        session.transcript.append({"role": "robot", "ts": time.time(), "script_key": key, **reply.to_dict()})
+        log.info("scripted answer %s/%s %s for %r", session.scenario, session.level, key, user_text)
+        return reply
+
     def _parse(self, result: ProviderResult) -> ExpReply:
         if result.refusal:
             return ExpReply(speech=FALLBACK_SPEECH, error=f"refusal: {result.refusal}")

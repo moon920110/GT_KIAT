@@ -158,7 +158,7 @@ function addNurse(text){ const d=document.createElement('div'); d.className='msg
 function addRobot(r){
   const d=document.createElement('div'); d.className='msg robot';
   const who=document.createElement('div'); who.className='who';
-  who.innerHTML = `<span>로봇</span> <span class="badge">${scenario}/${level}</span> <span class="badge">${r.scripted?'ALERT (script)':r.topic}</span>`;
+  who.innerHTML = `<span>로봇</span> <span class="badge">${scenario}/${level}</span> <span class="badge">${r.scripted?r.topic+' (script)':r.topic}</span>`;
   if(r.end_conversation){ const b=document.createElement('span'); b.className='badge'; b.textContent='end_conversation'; who.appendChild(b); }
   if(r.fallback_used){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='fallback model'; who.appendChild(b); }
   d.appendChild(who); d.append(r.speech);

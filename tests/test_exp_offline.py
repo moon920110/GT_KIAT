@@ -26,7 +26,11 @@ def test_all_nine_conditions_follow_script():
                 r = agent.respond(s, q["text"])
                 expected = sc["script"][lvl].get(q["key"]) or sc["script"]["C1"][q["key"]]
                 assert r.speech == expected and r.topic == q["topic"], (sid, lvl, q, r.speech)
+                assert r.scripted and r.provider == "script", (sid, lvl, q["text"])
                 assert not r.guard_hits, (sid, lvl, q["text"], r.guard_hits)
+            MockRecorder.last_request = None
+            r = agent.respond(s, "안녕")  # off-script -> model call; check the wire format
+            assert r.topic == "GREETING" and not r.scripted
             body = MockRecorder.last_request
             assert body["system"][0]["text"] == PROMPTS[(sid, lvl)]
             assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
@@ -80,6 +84,23 @@ def test_guards():
             for key, speech in sc["script"][lvl].items():
                 q = next(x["text"] for x in sc["questions"] if x["key"] == key)
                 assert not check_speech(speech, sid, lvl, q), (sid, lvl, key, check_speech(speech, sid, lvl, q))
+
+
+def test_scripted_questions_bypass_model():
+    """Scripted nurse questions (and close STT variants) return the script with no model call."""
+    ag = ExpAgent()
+    s = ag.new_session("S2", "C3")
+    ag.start(s)
+    MockRecorder.last_request = None
+    target = SCENARIOS["S2"]["script"]["C3"]["timeline"]
+    for text in ["넘어지기 전후에 어떤 일이 있었어?", "넘어지기 전후에 어떤 일이 있었어", "넘어지기 전 후에 어떤 일이 있었어요"]:
+        r = ag.respond(s, text)
+        assert r.scripted and r.provider == "script" and r.speech == target and r.topic == "TIMELINE", text
+    assert MockRecorder.last_request is None, "scripted question must not call the model"
+    assert s.transcript[-1]["script_key"] == "timeline"
+
+    r = ag.respond(s, "환자 괜찮아?")  # off-script -> model
+    assert not r.scripted and MockRecorder.last_request is not None
 
 
 if __name__ == "__main__":
