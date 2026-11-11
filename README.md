@@ -95,6 +95,35 @@ if reply.end_conversation:
 재생성하는 정책을 붙일 수 있다. API 오류 시 `reply.error`가 채워지고 `speech`는
 고정 사과 문구로 대체된다.
 
+## 실험용 서버 (`exp/`, EXP_SCENARIO.md)
+
+실증용과 별도의 에이전트/서버. 연구자가 **시나리오(S1 린넨·Low / S2 낙상·Moderate / S3 기도 폐쇄 의심·High)**
+와 **보고 완전성(C1 Minimal / C2 Objective Complete / C3 Contextually Complete)** 을 수동으로 고르면,
+그 외 상황과 대화는 모두 고정이다. 로봇이 아는 사실은 조건과 무관하게 동일하고, 보고 수준은
+'무엇을 먼저 말하는가'만 바꾼다.
+
+```bash
+uv run python -m exp.server           # http://127.0.0.1:8766  (NAMI_EXP_PORT)
+uv run python -m exp S2 C3            # 터미널: /cond S1 C2 로 조건 변경, /start 로 알림 재전송
+NAMI_MOCK=1 uv run python -m exp.server
+uv run python tests/test_exp_offline.py
+```
+
+흐름: 조건 선택 → **시작** (로봇이 고정된 알림을 먼저 말함, LLM 호출 없음) → 간호사가 질문 →
+로봇이 해당 조건의 기준 답변 범위로 답함. 대본에 없는 질문은 보고 수준 규칙과 사실 목록으로 답한다.
+
+| 파일 | 역할 |
+|---|---|
+| `exp/scenario.py` | 시나리오별 사실(F1~, 각 사실이 먼저 언급되는 최소 수준 표시), 알림 문장, 대본 질문과 수준별 기준 답변, `ExpSession` |
+| `exp/prompt.py` | 조건(시나리오×수준)별 시스템 프롬프트 9종 사전 렌더링 + 출력 스키마(speech, topic, end_conversation) |
+| `exp/agent.py` | `ExpAgent.new_session(S, C, participant)`, `start()` (고정 알림), `respond()`, `set_condition()` (대화 초기화) |
+| `exp/guards.py` | 수준 초과 정보 선제 언급(LEVEL_LEAK, 간호사가 묻지 않은 경우만), 환자 의도 단정, 임상 단정, 시각 오류, 없는 조치 등 사후 점검 |
+| `exp/mock.py` | 오프라인 모의 응답 (해당 조건의 기준 답변을 그대로 반환) |
+| `exp/server.py` | FastAPI: `/api/conditions`, `/api/sessions` (조건 지정), `PUT /api/sessions/{id}/condition`, `POST /api/sessions/{id}/start`, `/api/chat`, `/api/prompt` |
+| `sim/exp.html` | 실험 페이지: 참가자 ID, 조건 선택, 시작(알림), 대본 질문 버튼, 사실 목록(수준별 표시), 가드 경고, 음성 입출력, 기록 내보내기 |
+
+두 서버는 `nami/providers.py`의 공급자 어댑터(`.env`의 provider/model/key)를 공유한다.
+
 ## 설계 메모
 
 - 두 공급자 모두 같은 시스템 프롬프트와 JSON 스키마를 사용하므로 intent/speech 계약은 동일하다.

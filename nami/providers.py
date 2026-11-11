@@ -29,6 +29,7 @@ class ProviderResult:
 class Provider:
     name = "base"
     model: str
+    schema: dict  # JSON schema the model's reply must follow
 
     def complete(self, stable_system: str, runtime_system: str, history: list[dict[str, Any]], user_text: str) -> ProviderResult:
         raise NotImplementedError
@@ -38,11 +39,12 @@ class Provider:
 class OpenAIProvider(Provider):
     name = "openai"
 
-    def __init__(self, model: str, effort: str = "low", timeout: float = 60.0, client: Any = None) -> None:
+    def __init__(self, model: str, effort: str = "low", timeout: float = 60.0, client: Any = None, schema: Optional[dict] = None) -> None:
         import openai
 
         self.model = model
         self.effort = effort
+        self.schema = schema or RESPONSE_SCHEMA
         self.client = client or openai.OpenAI(timeout=timeout, max_retries=2)
         self._reasoning_model = bool(re.match(r"^(gpt-5|o\d)", model))
 
@@ -59,7 +61,7 @@ class OpenAIProvider(Provider):
             max_completion_tokens=2048,
             response_format={
                 "type": "json_schema",
-                "json_schema": {"name": "nami_reply", "schema": RESPONSE_SCHEMA, "strict": True},
+                "json_schema": {"name": "robot_reply", "schema": self.schema, "strict": True},
             },
         )
         if self._reasoning_model:
@@ -94,11 +96,12 @@ class OpenAIProvider(Provider):
 class AnthropicProvider(Provider):
     name = "anthropic"
 
-    def __init__(self, model: str, effort: str = "low", timeout: float = 60.0, client: Any = None, use_fallbacks: bool = True) -> None:
+    def __init__(self, model: str, effort: str = "low", timeout: float = 60.0, client: Any = None, use_fallbacks: bool = True, schema: Optional[dict] = None) -> None:
         import anthropic
 
         self.model = model
         self.effort = effort
+        self.schema = schema or RESPONSE_SCHEMA
         self.use_fallbacks = use_fallbacks
         self.client = client or anthropic.Anthropic(timeout=timeout, max_retries=2)
 
@@ -112,7 +115,7 @@ class AnthropicProvider(Provider):
             max_tokens=2048,
             system=system,
             messages=[*history, {"role": "user", "content": user_text}],
-            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
+            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": self.schema}},
         )
         if self.use_fallbacks:
             # Server-side refusal fallback: a declined request is re-run on Anthropic's recommended substitute.
@@ -160,17 +163,27 @@ def resolve_provider_name() -> str:
     return "anthropic"
 
 
-def make_provider(name: Optional[str] = None, model: Optional[str] = None, effort: Optional[str] = None, timeout: float = 60.0) -> Provider:
+def make_provider(
+    name: Optional[str] = None,
+    model: Optional[str] = None,
+    effort: Optional[str] = None,
+    timeout: float = 60.0,
+    schema: Optional[dict] = None,
+    mock_client_factory: Any = None,
+) -> Provider:
+    """``schema`` defaults to the Nami reply schema; other agents pass their own.
+    ``mock_client_factory`` builds the offline transport used when NAMI_MOCK=1."""
     name = (name or resolve_provider_name()).lower()
     effort = effort or os.environ.get("NAMI_EFFORT", "low")
     model = model or os.environ.get("NAMI_MODEL") or DEFAULT_MODELS[name]
 
     if os.environ.get("NAMI_MOCK") == "1":
-        from .mock import mock_client  # offline canned replies; Anthropic wire format
+        if mock_client_factory is None:
+            from .mock import mock_client as mock_client_factory  # offline canned replies; Anthropic wire format
 
-        prov = AnthropicProvider(model=model, effort=effort, client=mock_client())
+        prov = AnthropicProvider(model=model, effort=effort, client=mock_client_factory(), schema=schema)
         prov.name = "mock"
         return prov
     if name == "openai":
-        return OpenAIProvider(model=model, effort=effort, timeout=timeout)
-    return AnthropicProvider(model=model, effort=effort, timeout=timeout)
+        return OpenAIProvider(model=model, effort=effort, timeout=timeout, schema=schema)
+    return AnthropicProvider(model=model, effort=effort, timeout=timeout, schema=schema)

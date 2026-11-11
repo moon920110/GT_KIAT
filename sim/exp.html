@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Completeness Experiment Sim</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1b1f24; --muted:#5f6b7a; --line:#e2e6eb;
+    --nurse:#dfe9ff; --robot:#ffffff; --accent:#2457d6; --ok:#1d8a4a; --warn:#b4541a; --bad:#c0392b;
+    --chip:#eef1f5; --chip-ink:#2a3340; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --low:#1d8a4a; --moderate:#b4541a; --high:#c0392b;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0f1216; --panel:#171b21; --ink:#e8ebef; --muted:#97a2b0; --line:#2a313a;
+    --nurse:#203457; --robot:#1e242c; --accent:#7ea2ff; --ok:#4fc27a; --warn:#f0a35c; --bad:#ff7b6e;
+    --chip:#222933; --chip-ink:#d6dce4; --low:#4fc27a; --moderate:#f0a35c; --high:#ff7b6e;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --panel:#171b21; --ink:#e8ebef; --muted:#97a2b0; --line:#2a313a;
+    --nurse:#203457; --robot:#1e242c; --accent:#7ea2ff; --ok:#4fc27a; --warn:#f0a35c; --bad:#ff7b6e;
+    --chip:#222933; --chip-ink:#d6dce4; --low:#4fc27a; --moderate:#f0a35c; --high:#ff7b6e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
+  header h1{font-size:17px;margin:0;font-weight:650}
+  header .meta{color:var(--muted);font-size:13px;font-family:var(--mono)}
+  header .spacer{flex:1}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:6px}
+  .dot.ok{background:var(--ok)}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:16px;padding:16px;max-width:1500px;margin:0 auto}
+  @media (max-width:980px){ main{grid-template-columns:1fr} }
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .chat{display:flex;flex-direction:column;min-height:calc(100vh - 110px)}
+  .log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:78%;padding:10px 14px;border-radius:14px;border:1px solid var(--line);white-space:pre-wrap}
+  .msg.nurse{align-self:flex-end;background:var(--nurse);border-bottom-right-radius:4px}
+  .msg.robot{align-self:flex-start;background:var(--robot);border-bottom-left-radius:4px}
+  .msg.sys{align-self:center;background:transparent;border:none;color:var(--muted);font-size:12.5px;padding:2px}
+  .msg .who{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .badge{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--chip-ink)}
+  .badge.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+  .badge.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+  .badge.bad{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+  .diag{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+  .guard{margin-top:6px;font-size:12.5px;color:var(--warn);border-left:3px solid var(--warn);padding-left:8px}
+  .err{margin-top:6px;font-size:12.5px;color:var(--bad)}
+  .compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+  .compose input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px}
+  button{padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--accent);color:#fff;border-color:transparent}
+  button.danger{background:var(--bad);color:#fff;border-color:transparent}
+  button:disabled{opacity:.5;cursor:default}
+  .side{display:flex;flex-direction:column;gap:16px}
+  .side section{padding:14px}
+  .side h2{font-size:14px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:6px 10px;border-radius:999px;background:var(--chip);color:var(--chip-ink);font-size:13px;cursor:pointer;border:1px solid transparent}
+  .chip:hover{border-color:var(--accent)}
+  .chip small{color:var(--muted);font-family:var(--mono);margin-right:4px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .row:last-child{border-bottom:none}
+  select,input[type=text]{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:13px}
+  .seg{display:flex;gap:4px}
+  .seg button{padding:6px 10px;font-family:var(--mono);font-size:13px}
+  .seg button.on{background:var(--accent);color:#fff;border-color:transparent}
+  .cond{font-size:15px;font-weight:650;margin:8px 0 2px}
+  .cond .urg{font-family:var(--mono);font-size:12px;padding:1px 7px;border-radius:999px;color:#fff;margin-left:6px}
+  .urg.Low{background:var(--low)} .urg.Moderate{background:var(--moderate)} .urg.High{background:var(--high)}
+  .facts{font-size:13px;color:var(--ink);padding-left:18px;margin:6px 0}
+  .facts li{margin:3px 0}
+  .facts .lv{font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:4px}
+  .facts li.hidden{color:var(--muted)}
+  .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  details pre{font:12px/1.45 var(--mono);white-space:pre-wrap;background:var(--chip);padding:10px;border-radius:8px;max-height:320px;overflow:auto}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+  #mic{min-width:44px;font-size:18px;line-height:1}
+  #mic.listening{background:var(--bad);color:#fff;border-color:transparent;animation:pulse 1.2s infinite}
+  #mic.speaking{background:var(--ok);color:#fff;border-color:transparent}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(192,57,43,.45)}70%{box-shadow:0 0 0 10px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
+  .voicebar{display:flex;gap:14px;align-items:center;padding:6px 12px 0;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .voicebar label{display:flex;gap:5px;align-items:center;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>실험 · 보고 완전성 (C1/C2/C3) × 긴급도 (S1/S2/S3)</h1>
+  <span class="meta" id="health"><span class="dot"></span>connecting…</span>
+  <span class="spacer"></span>
+  <button id="themeBtn" title="theme">◐</button>
+</header>
+
+<main>
+  <div class="panel chat">
+    <div class="log" id="log"></div>
+    <div class="voicebar">
+      <label><input type="checkbox" id="ttsOn" checked> 로봇 음성 재생</label>
+      <label><input type="checkbox" id="convMode"> 연속 대화 (답변 후 자동으로 다시 듣기)</label>
+      <select id="voiceSel" title="TTS voice"></select>
+      <span id="voiceStatus"></span>
+    </div>
+    <div class="compose">
+      <button id="mic" title="말하기 (클릭하여 시작/중지)">🎤</button>
+      <input id="input" placeholder="간호사 발화를 입력하거나 🎤로 말하세요" autocomplete="off">
+      <button class="primary" id="send">전송</button>
+    </div>
+  </div>
+
+  <aside class="side">
+    <section class="panel">
+      <h2>실험 조건 (연구자 설정)</h2>
+      <div class="row"><label>참가자 ID</label><input type="text" id="participant" placeholder="P01" style="width:120px"></div>
+      <div class="row"><label>시나리오 (긴급도)</label><div class="seg" id="segScenario"></div></div>
+      <div class="row"><label>보고 수준</label><div class="seg" id="segLevel"></div></div>
+      <div class="cond" id="condLabel"></div>
+      <p class="hint" id="levelRule"></p>
+      <div class="actions">
+        <button class="danger" id="startBtn">▶ 시작 (로봇 알림 전송)</button>
+        <button id="resetBtn">대화 초기화</button>
+        <button id="exportBtn">기록 내보내기</button>
+      </div>
+      <p class="hint">조건을 바꾸면 대화가 초기화됩니다. '시작'을 누르면 로봇이 고정된 알림을 먼저 말합니다. 그 뒤 간호사 역할로 질문하세요.</p>
+    </section>
+
+    <section class="panel">
+      <h2>대본 질문 (간호사)</h2>
+      <div class="chips" id="qChips"></div>
+      <div class="actions"><button id="runScript">대본 순서대로 자동 실행</button></div>
+      <p class="hint">대본에 없는 질문도 가능합니다. 로봇은 현재 보고 수준 규칙에 따라 답합니다.</p>
+    </section>
+
+    <section class="panel">
+      <h2>로봇이 아는 사실 (조건과 무관하게 동일)</h2>
+      <ul class="facts" id="facts"></ul>
+      <p class="hint">회색: 이 보고 수준에서는 먼저 말하지 않는 사실 (명시적으로 물을 때만).</p>
+      <details style="margin-top:8px"><summary class="hint">시스템 프롬프트 보기</summary><pre id="promptView">loading…</pre></details>
+    </section>
+  </aside>
+</main>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+const log = $('#log');
+let sessionId = null, cond = null, meta = null, busy = false;
+let scenario = 'S1', level = 'C1';
+
+(function(){ try{ const t=localStorage.getItem('exp-theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){} })();
+$('#themeBtn').onclick = ()=>{ const cur=document.documentElement.dataset.theme; const next = cur==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('exp-theme',next)}catch(e){} };
+
+async function api(path, opts={}){
+  const r = await fetch(path, {headers:{'Content-Type':'application/json'}, ...opts});
+  if(!r.ok){ throw new Error(`${r.status} ${await r.text()}`); }
+  return r.json();
+}
+function sys(text){ const d=document.createElement('div'); d.className='msg sys'; d.textContent=text; log.appendChild(d); log.scrollTop=log.scrollHeight; }
+function addNurse(text){ const d=document.createElement('div'); d.className='msg nurse'; d.innerHTML=`<div class="who">간호사</div>`; d.append(text); log.appendChild(d); log.scrollTop=log.scrollHeight; }
+function addRobot(r){
+  const d=document.createElement('div'); d.className='msg robot';
+  const who=document.createElement('div'); who.className='who';
+  who.innerHTML = `<span>로봇</span> <span class="badge">${scenario}/${level}</span> <span class="badge">${r.scripted?'ALERT (script)':r.topic}</span>`;
+  if(r.end_conversation){ const b=document.createElement('span'); b.className='badge'; b.textContent='end_conversation'; who.appendChild(b); }
+  if(r.fallback_used){ const b=document.createElement('span'); b.className='badge warn'; b.textContent='fallback model'; who.appendChild(b); }
+  d.appendChild(who); d.append(r.speech);
+  if(!r.scripted){ const u=r.usage||{}; const diag=document.createElement('div'); diag.className='diag'; diag.textContent=`${r.latency_ms} ms · ${r.model||''} · in ${u.input_tokens??'-'} (cache ${u.cache_read_input_tokens??0}) · out ${u.output_tokens??'-'}`; d.appendChild(diag); }
+  (r.guard_hits||[]).forEach(h=>{ const g=document.createElement('div'); g.className='guard'; g.innerHTML=`<b>${h.label}</b> <span class="hint">${h.code}</span><br>${h.evidence}`; d.appendChild(g); });
+  if(r.error){ const e=document.createElement('div'); e.className='err'; e.textContent=r.error; d.appendChild(e); }
+  log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+
+async function send(text){
+  if(busy || !text.trim()) return null;
+  busy=true; $('#send').disabled=true;
+  addNurse(text);
+  const typing=document.createElement('div'); typing.className='msg sys'; typing.textContent='로봇 응답 생성 중…'; log.appendChild(typing);
+  try{
+    const r = await api('/api/chat',{method:'POST',body:JSON.stringify({session_id:sessionId,text})});
+    typing.remove(); addRobot(r); speak(r.speech); return r;
+  }catch(e){ typing.remove(); sys('요청 실패: '+e.message); return null; }
+  finally{ busy=false; $('#send').disabled=false; $('#input').focus(); }
+}
+
+async function startAlert(){
+  if(busy) return;
+  busy=true;
+  try{ const r=await api(`/api/sessions/${sessionId}/start`,{method:'POST'}); log.innerHTML=''; sys(`${cond.condition} · 로봇 알림`); addRobot(r); speak(r.speech); }
+  catch(e){ sys('시작 실패: '+e.message); }
+  finally{ busy=false; }
+}
+
+// ---------- condition panel
+function seg(el, items, current, onPick, labelFn){
+  el.innerHTML='';
+  items.forEach(it=>{ const b=document.createElement('button'); b.textContent=labelFn?labelFn(it):it; b.className=it===current?'on':''; b.onclick=()=>onPick(it); el.appendChild(b); });
+}
+function renderCondition(){
+  const sc=meta.scenarios[scenario], li=meta.level_info[level];
+  seg($('#segScenario'), meta.scenario_ids, scenario, async s=>{ scenario=s; await applyCondition(); }, s=>`${s}`);
+  seg($('#segLevel'), meta.levels, level, async l=>{ level=l; await applyCondition(); });
+  $('#condLabel').innerHTML = `${scenario} ${sc.title} <span class="urg ${sc.urgency}">${sc.urgency}</span> · ${level} ${li.name}`;
+  $('#levelRule').textContent = `${li.ko}: ${li.rule}`;
+  const q=$('#qChips'); q.innerHTML='';
+  sc.questions.forEach(x=>{ const c=document.createElement('span'); c.className='chip'; c.innerHTML=`<small>${x.topic}</small>${x.text}`; c.onclick=()=>send(x.text); q.appendChild(c); });
+  const f=$('#facts'); f.innerHTML='';
+  const order=meta.levels;
+  sc.facts.forEach(x=>{ const e=document.createElement('li'); e.className = order.indexOf(x.level)>order.indexOf(level)?'hidden':''; e.innerHTML=`<span class="lv">${x.id} ${x.level}</span>${x.text}`; f.appendChild(e); });
+  refreshPrompt();
+}
+async function applyCondition(){
+  try{ cond=await api(`/api/sessions/${sessionId}/condition`,{method:'PUT',body:JSON.stringify({scenario,level,participant:$('#participant').value})}); }
+  catch(e){ sys('조건 변경 실패: '+e.message); return; }
+  log.innerHTML=''; renderCondition(); sys(`조건 변경: ${cond.condition}. '시작'을 눌러 로봇 알림을 보내세요.`);
+}
+async function refreshPrompt(){ try{ const p=await api(`/api/prompt?session_id=${sessionId}`); $('#promptView').textContent=p.stable+'\n\n'+p.runtime; }catch(e){} }
+$('#participant').addEventListener('change', async()=>{ try{ cond=await api(`/api/sessions/${sessionId}/condition`,{method:'PUT',body:JSON.stringify({participant:$('#participant').value})}); }catch(e){} });
+$('#startBtn').onclick=startAlert;
+$('#resetBtn').onclick=applyCondition;
+$('#exportBtn').onclick=async()=>{ const s=await api(`/api/sessions/${sessionId}`); const blob=new Blob([JSON.stringify(s,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`exp-${s.participant||'anon'}-${s.scenario}-${s.level}-${sessionId}.json`; a.click(); };
+$('#runScript').onclick=async()=>{ if(busy) return; if(!cond.alerted){ await startAlert(); } for(const q of meta.scenarios[scenario].questions){ await send(q.text); await new Promise(r=>setTimeout(r,250)); } };
+
+$('#send').onclick=()=>{ const t=$('#input').value; $('#input').value=''; send(t); };
+$('#input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#send').click(); } });
+
+// ---------- voice (Web Speech API: STT ko-KR + TTS)
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn=$('#mic'), voiceStatus=$('#voiceStatus'), voiceSel=$('#voiceSel');
+let rec=null, listening=false, wantListen=false;
+function loadVoices(){
+  const vs=speechSynthesis.getVoices(); if(!vs.length) return;
+  const ko=vs.filter(v=>/^ko/i.test(v.lang)); const list=ko.length?ko:vs;
+  voiceSel.innerHTML=''; list.forEach(v=>{ const o=document.createElement('option'); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; voiceSel.appendChild(o); });
+  try{ const saved=localStorage.getItem('exp-voice'); if(saved && list.some(v=>v.name===saved)) voiceSel.value=saved; }catch(e){}
+  if(!ko.length) voiceStatus.textContent='한국어 TTS 음성이 없습니다';
+}
+if('speechSynthesis' in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; } else { $('#ttsOn').checked=false; $('#ttsOn').disabled=true; }
+voiceSel.onchange=()=>{ try{localStorage.setItem('exp-voice',voiceSel.value)}catch(e){} };
+function speak(text){
+  if(!$('#ttsOn').checked || !('speechSynthesis' in window) || !text) { if($('#convMode').checked) startListening(); return; }
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text); u.lang='ko-KR'; u.rate=1.0;
+  const v=speechSynthesis.getVoices().find(v=>v.name===voiceSel.value); if(v) u.voice=v;
+  u.onstart=()=>{ micBtn.classList.add('speaking'); voiceStatus.textContent='로봇 말하는 중…'; };
+  u.onend=u.onerror=()=>{ micBtn.classList.remove('speaking'); voiceStatus.textContent=''; if($('#convMode').checked && !busy) startListening(); };
+  speechSynthesis.speak(u);
+}
+function startListening(){
+  if(!SR){ voiceStatus.textContent='이 브라우저는 음성 인식을 지원하지 않습니다 (Chrome/Safari 사용)'; return; }
+  if(listening) return;
+  speechSynthesis.cancel();
+  rec=new SR(); rec.lang='ko-KR'; rec.interimResults=true; rec.maxAlternatives=1; rec.continuous=false;
+  let finalText='';
+  rec.onstart=()=>{ listening=true; micBtn.classList.add('listening'); voiceStatus.textContent='듣는 중… 말씀하세요'; $('#input').value=''; };
+  rec.onresult=(e)=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const t=e.results[i][0].transcript; if(e.results[i].isFinal) finalText+=t; else interim+=t; } $('#input').value = finalText || interim; };
+  rec.onerror=(e)=>{ voiceStatus.textContent = e.error==='not-allowed' ? '마이크 권한이 필요합니다' : (e.error==='no-speech' ? '음성이 감지되지 않았습니다' : '인식 오류: '+e.error); };
+  rec.onend=()=>{ listening=false; micBtn.classList.remove('listening'); const text=(finalText||$('#input').value).trim(); if(text){ voiceStatus.textContent=''; $('#input').value=''; send(text); } else if($('#convMode').checked && wantListen && !busy){ setTimeout(startListening,400); } };
+  wantListen=true; rec.start();
+}
+function stopListening(){ wantListen=false; if(rec && listening){ rec.stop(); } }
+micBtn.onclick=()=>{ if(listening) stopListening(); else startListening(); };
+$('#convMode').addEventListener('change',e=>{ if(e.target.checked && !listening && !busy) startListening(); if(!e.target.checked) stopListening(); });
+document.addEventListener('keydown',e=>{ if(e.code==='Space' && document.activeElement!==$('#input') && document.activeElement!==$('#participant') && !e.repeat){ e.preventDefault(); micBtn.click(); } });
+if(!SR){ micBtn.disabled=true; micBtn.title='음성 인식 미지원 브라우저'; }
+
+// ---------- boot
+(async function(){
+  try{
+    const h=await api('/api/health');
+    $('#health').innerHTML = `<span class="dot ${h.api_key_present?'ok':''}"></span>${h.provider} · ${h.model} · effort ${h.effort}${h.mock?' · MOCK (offline)':(h.api_key_present?'':' · API 키 없음')}`;
+    meta=await api('/api/conditions');
+    cond=await api('/api/sessions',{method:'POST',body:JSON.stringify({scenario,level,participant:''})}); sessionId=cond.session_id;
+    renderCondition(); sys(`세션 ${sessionId} · 조건을 고른 뒤 '시작'을 누르세요.`);
+  }catch(e){ $('#health').innerHTML=`<span class="dot"></span>server error`; sys('서버 연결 실패: '+e.message); }
+})();
+</script>
+</body>
+</html>
